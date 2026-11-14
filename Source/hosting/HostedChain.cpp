@@ -184,6 +184,12 @@ void HostedChain::updateActive()
         if (! s->isBypassed())
             ++n;
     activeCount.store (n, std::memory_order_release);
+    refreshLatency();
+}
+
+void HostedChain::refreshLatency()
+{
+    latency.store (slots.empty() ? 0 : juce::jmax (0, graph.getLatencySamples()), std::memory_order_relaxed);
 }
 
 void HostedChain::rewire()

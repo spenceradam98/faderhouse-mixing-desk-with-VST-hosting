@@ -39,6 +39,7 @@ private:
     Meter meter;
     juce::Rectangle<int> secReturns, secComp, secMaster, scaleArea, grArea;
     float lastGr = 0;
+    int lastPdc = -1;
 
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sAtt;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> bAtt;

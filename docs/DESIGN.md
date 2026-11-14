@@ -64,6 +64,30 @@ their state are saved in the session; restores that arrive on a non-message
 thread are applied by a timer on the message thread. Editors close themselves
 before their plugin is removed.
 
+## Latency compensation
+
+Each chain reports the latency of its graph (re-read 5 times a second, since
+plugins can change it). Per block:
+
+- channel latency = inserts + instrument (when the source is the instrument);
+  every live channel is delayed by `max - own`, before its fader and sends, so
+  the mix bus and all aux buses receive time-aligned channels;
+- the dry mix is delayed by the slowest FX return, and each return by
+  `slowest - own`, so wet and dry stay together;
+- the total (`channels + returns + master inserts`) is reported to the host
+  with `setLatencySamples`, and shown as PDC in the master section.
+
+Bypassed plugins stop counting. A change of compensation clears the delay
+history, so re-alignment gives a moment of silence rather than a repeat.
+Delays go up to 1 s (or 65536 samples, whichever is longer).
+
+## Faderhouse Strip
+
+A second plugin target built from the same `ChannelStrip` DSP and the same
+`ProcessingPanel` UI as the desk's channel panel: input, filters, dynamics,
+EQ, then pan (constant power with the centre at unity for mono tracks,
+balance for stereo), fader and mute. No hosting, no latency.
+
 ## Plugin vs Standalone buses
 
 - **Standalone**: one input bus of up to 16 discrete channels (whatever the
@@ -74,9 +98,6 @@ before their plugin is removed.
 
 ## Known limits (v0.1)
 
-- No plugin delay compensation between channels: a high-latency insert on
-  one channel will be out of time with the others. The master inserts are
-  fine (everything goes through them).
 - Plugin scanning runs in-process (as in Scope), so a crashing plugin can
   take the app down during a scan; the dead-man's-pedal file skips it next time.
 - No groups/VCAs, no automation of insert slots, no meters on the input side.
@@ -84,7 +105,7 @@ before their plugin is removed.
 
 ## Roadmap
 
-1. Per-channel latency compensation for hosted plugins.
+1. ~~Per-channel latency compensation for hosted plugins.~~ Done in v0.2.
 2. Out-of-process plugin scanning.
 3. Audio-group buses (4 stereo groups) and VCA faders.
 4. MIDI learn for faders/knobs (control surfaces), and a Standalone "snapshot" recall.

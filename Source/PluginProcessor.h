@@ -3,6 +3,7 @@
 #include "engine/Params.h"
 #include "engine/ChannelStrip.h"
 #include "engine/BusCompressor.h"
+#include "engine/DelayLine.h"
 #include "hosting/HostedChain.h"
 
 // The console: 16 channel strips, 4 aux sends/FX returns, a mix bus with
@@ -68,6 +69,19 @@ public:
     std::atomic<float> masterPeakL { 0 }, masterPeakR { 0 };
     std::atomic<double> currentSampleRate { 48000.0 };
 
+    // Plugin delay compensation. Channels are delayed to line up with the
+    // slowest channel, FX returns with the slowest return (and the dry mix by
+    // that much), and the total is reported to the host.
+    struct Latencies
+    {
+        std::array<int, fh::kNumChannels> channel {};
+        std::array<int, fh::kNumAux> aux {};
+        int channelMax = 0, auxMax = 0, master = 0;
+        int total() const noexcept { return channelMax + auxMax + master; }
+    };
+    Latencies computeLatencies() const noexcept;
+    std::atomic<int> pdcSamples { 0 }; // total compensation, for the UI
+
     juce::String getChannelName (int ch) const;
     void setChannelName (int ch, const juce::String&);
     int numAvailableInputs() const;          // inputs the strips can pick right now
@@ -84,6 +98,9 @@ private:
     int inputBufferIndex (int flatIndex) const;
 
     juce::AudioBuffer<float> inputCopy, chBuf, mixBuf;
+    std::array<fh::DelayLine, fh::kNumChannels> chDelay;
+    std::array<fh::DelayLine, fh::kNumAux> auxDelay;
+    fh::DelayLine dryDelay;
     std::array<juce::AudioBuffer<float>, fh::kNumAux> auxBuf;
     juce::MidiBuffer chMidi, emptyMidi;
     std::array<int, fh::kNumInputs> inputMap {};

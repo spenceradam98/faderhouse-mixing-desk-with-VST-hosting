@@ -60,6 +60,7 @@ void MasterSection::refresh()
     if (masterIns.getButtonText() != mt) masterIns.setButtonText (mt);
     masterIns.setToggleState (proc.masterInserts->isActive(), dontSendNotification);
     meter.push (proc.masterPeakL.exchange (0.0f), proc.masterPeakR.exchange (0.0f));
+    if (proc.pdcSamples.load() != lastPdc) { lastPdc = proc.pdcSamples.load(); repaint (0, 0, getWidth(), 34); }
 }
 
 void MasterSection::resized()
@@ -117,6 +118,14 @@ void MasterSection::paint (Graphics& g)
     g.setColour (t.screen); g.fillRoundedRectangle (head, 3.0f);
     g.setColour (t.curve); g.setFont (Font (FontOptions (14.0f, Font::bold)));
     g.drawText ("MASTER", head.reduced (8, 0), Justification::centredLeft);
+    {
+        // Plugin delay compensation currently applied
+        const int pdc = proc.pdcSamples.load();
+        g.setFont (Font (FontOptions (10.0f, Font::bold)));
+        g.setColour (pdc > 0 ? t.curve : t.curve.withAlpha (0.45f));
+        g.drawText ("PDC " + String (1000.0 * pdc / jmax (1.0, proc.currentSampleRate.load()), 1) + " ms",
+                    head.reduced (8, 0), Justification::centredRight);
+    }
 
     drawSection (g, secReturns.toFloat(), t, "FX RETURNS");
     drawSection (g, secComp.toFloat(), t, "BUS COMPRESSOR");

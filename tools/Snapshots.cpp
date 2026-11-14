@@ -1,6 +1,7 @@
 // Renders PNG screenshots of the console in every theme with a test signal.
 // Usage: Snapshots <outDir>   (use xvfb-run on a headless Linux box)
 #include "PluginEditor.h"
+#include "strip/StripEditor.h"
 
 using namespace juce;
 using namespace fh;
@@ -65,5 +66,35 @@ int main (int argc, char* argv[])
         std::cout << "wrote " << f.getFullPathName() << "\n";
     }
     proc.releaseResources();
+
+    // Faderhouse Strip, in two themes
+    FaderhouseStripProcessor sp;
+    sp.setPlayConfigDetails (2, 2, sr, bs);
+    sp.prepareToPlay (sr, bs);
+    auto setS = [&] (const char* id, float v) { auto* q = sp.apvts.getParameter (cid (0, id)); q->setValueNotifyingHost (q->convertTo0to1 (v)); };
+    setS ("hpf", 80.0f); setS ("hmG", 4.0f); setS ("hmF", 3000.0f); setS ("lmG", -3.0f); setS ("lmF", 400.0f); setS ("hfG", 2.5f);
+    setS ("cOn", 1.0f); setS ("cThr", -18.0f); setS ("fader", -3.0f);
+    for (int t : { 0, 1 })
+    {
+        sp.uiState.setProperty ("theme", t, nullptr);
+        sp.uiState.setProperty ("scale", 1.0, nullptr);
+        auto ed = std::make_unique<FaderhouseStripEditor> (sp);
+        for (int k = 0; k < 40; ++k)
+        {
+            for (int i = 0; i < bs; ++i, ++pos)
+            {
+                const float v = 0.4f * (float) std::sin (MathConstants<double>::twoPi * 220.0 * (double) pos / sr);
+                buf.setSample (0, i, v); buf.setSample (1, i, v);
+            }
+            sp.processBlock (buf, midi);
+            if (k % 4 == 0) ed->refreshMeters();
+        }
+        auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        auto f = outDir.getChildFile ("strip_" + getTheme (t).name.replace (" ", "") + ".png");
+        f.deleteFile();
+        FileOutputStream os (f);
+        PNGImageFormat().writeImageToStream (img, os);
+        std::cout << "wrote " << f.getFullPathName() << "\n";
+    }
     return 0;
 }

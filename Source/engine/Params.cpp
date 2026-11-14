@@ -76,6 +76,51 @@ String panText (float v, int)
     const int p = roundToInt (v * 100.0f);
     return p == 0 ? String ("C") : (p < 0 ? "L" + String (-p) : "R" + String (p));
 }
+
+void addProcessingParams (Builder& b, int c, const String& n)
+{
+    // Input
+    b.flt (cid (c, "trim"), n + "Trim", { -20.0f, 20.0f }, 0.0f, dbText);
+    b.flt (cid (c, "drive"), n + "Drive", { 0.0f, 1.0f }, 0.0f,
+           [] (float v, int) { return String (roundToInt (v * 100)) + "%"; });
+    b.boolean (cid (c, "phase"), n + "Phase Invert", false);
+    b.flt (cid (c, "hpf"), n + "High Pass", freqRange (16.0f, 350.0f), 16.0f,
+           [] (float v, int i) { return v <= 16.5f ? String ("off") : hzText (v, i); });
+    b.flt (cid (c, "lpf"), n + "Low Pass", freqRange (3000.0f, 22000.0f), 22000.0f,
+           [] (float v, int i) { return v >= 21900.0f ? String ("off") : hzText (v, i); });
+
+    // Dynamics
+    b.boolean (cid (c, "cOn"), n + "Comp On", false);
+    b.flt (cid (c, "cThr"), n + "Comp Threshold", { -40.0f, 0.0f }, -10.0f, dbText);
+    b.flt (cid (c, "cRatio"), n + "Comp Ratio", NormalisableRange<float> (1.0f, 20.0f, 0.0f, 0.4f), 4.0f,
+           [] (float v, int) { return v >= 19.9f ? String ("inf:1") : String (v, 1) + ":1"; });
+    b.flt (cid (c, "cRel"), n + "Comp Release", NormalisableRange<float> (0.05f, 4.0f, 0.0f, 0.4f), 0.3f,
+           [] (float v, int) { return String (v, 2) + " s"; });
+    b.boolean (cid (c, "cFast"), n + "Comp Fast Attack", false);
+    b.boolean (cid (c, "gOn"), n + "Gate On", false);
+    b.flt (cid (c, "gThr"), n + "Gate Threshold", { -80.0f, 0.0f }, -50.0f, dbText);
+    b.flt (cid (c, "gRange"), n + "Gate Range", { 0.0f, 80.0f }, 40.0f, dbText);
+    b.flt (cid (c, "gRel"), n + "Gate Release", NormalisableRange<float> (0.01f, 4.0f, 0.0f, 0.4f), 0.2f,
+           [] (float v, int) { return String (v, 2) + " s"; });
+    b.boolean (cid (c, "gExp"), n + "Gate Expander Mode", false);
+    b.boolean (cid (c, "dynPre"), n + "Dynamics Before EQ", false);
+
+    // EQ
+    b.boolean (cid (c, "eqOn"), n + "EQ On", true);
+    b.boolean (cid (c, "eqBlk"), n + "EQ Black Mode", false);
+    b.flt (cid (c, "hfG"), n + "HF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
+    b.flt (cid (c, "hfF"), n + "HF Freq", freqRange (1500.0f, 16000.0f), 8000.0f, hzText);
+    b.boolean (cid (c, "hfBell"), n + "HF Bell", false);
+    b.flt (cid (c, "hmG"), n + "HMF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
+    b.flt (cid (c, "hmF"), n + "HMF Freq", freqRange (600.0f, 7000.0f), 2500.0f, hzText);
+    b.flt (cid (c, "hmQ"), n + "HMF Q", NormalisableRange<float> (0.4f, 3.0f, 0.0f, 0.6f), 1.0f);
+    b.flt (cid (c, "lmG"), n + "LMF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
+    b.flt (cid (c, "lmF"), n + "LMF Freq", freqRange (200.0f, 2500.0f), 600.0f, hzText);
+    b.flt (cid (c, "lmQ"), n + "LMF Q", NormalisableRange<float> (0.4f, 3.0f, 0.0f, 0.6f), 1.0f);
+    b.flt (cid (c, "lfG"), n + "LF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
+    b.flt (cid (c, "lfF"), n + "LF Freq", freqRange (30.0f, 450.0f), 100.0f, hzText);
+    b.boolean (cid (c, "lfBell"), n + "LF Bell", false);
+}
 } // namespace
 
 AudioProcessorValueTreeState::ParameterLayout createLayout (bool standalone)
@@ -102,47 +147,7 @@ AudioProcessorValueTreeState::ParameterLayout createLayout (bool standalone)
         b.choice (cid (c, "midi"), n + "MIDI Channel",
                   StringArray { "Omni", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16" }, 0);
 
-        // Input
-        b.flt (cid (c, "trim"), n + "Trim", { -20.0f, 20.0f }, 0.0f, dbText);
-        b.flt (cid (c, "drive"), n + "Drive", { 0.0f, 1.0f }, 0.0f,
-               [] (float v, int) { return String (roundToInt (v * 100)) + "%"; });
-        b.boolean (cid (c, "phase"), n + "Phase Invert", false);
-        b.flt (cid (c, "hpf"), n + "High Pass", freqRange (16.0f, 350.0f), 16.0f,
-               [] (float v, int i) { return v <= 16.5f ? String ("off") : hzText (v, i); });
-        b.flt (cid (c, "lpf"), n + "Low Pass", freqRange (3000.0f, 22000.0f), 22000.0f,
-               [] (float v, int i) { return v >= 21900.0f ? String ("off") : hzText (v, i); });
-
-        // Dynamics
-        b.boolean (cid (c, "cOn"), n + "Comp On", false);
-        b.flt (cid (c, "cThr"), n + "Comp Threshold", { -40.0f, 0.0f }, -10.0f, dbText);
-        b.flt (cid (c, "cRatio"), n + "Comp Ratio", NormalisableRange<float> (1.0f, 20.0f, 0.0f, 0.4f), 4.0f,
-               [] (float v, int) { return v >= 19.9f ? String ("inf:1") : String (v, 1) + ":1"; });
-        b.flt (cid (c, "cRel"), n + "Comp Release", NormalisableRange<float> (0.05f, 4.0f, 0.0f, 0.4f), 0.3f,
-               [] (float v, int) { return String (v, 2) + " s"; });
-        b.boolean (cid (c, "cFast"), n + "Comp Fast Attack", false);
-        b.boolean (cid (c, "gOn"), n + "Gate On", false);
-        b.flt (cid (c, "gThr"), n + "Gate Threshold", { -80.0f, 0.0f }, -50.0f, dbText);
-        b.flt (cid (c, "gRange"), n + "Gate Range", { 0.0f, 80.0f }, 40.0f, dbText);
-        b.flt (cid (c, "gRel"), n + "Gate Release", NormalisableRange<float> (0.01f, 4.0f, 0.0f, 0.4f), 0.2f,
-               [] (float v, int) { return String (v, 2) + " s"; });
-        b.boolean (cid (c, "gExp"), n + "Gate Expander Mode", false);
-        b.boolean (cid (c, "dynPre"), n + "Dynamics Before EQ", false);
-
-        // EQ
-        b.boolean (cid (c, "eqOn"), n + "EQ On", true);
-        b.boolean (cid (c, "eqBlk"), n + "EQ Black Mode", false);
-        b.flt (cid (c, "hfG"), n + "HF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
-        b.flt (cid (c, "hfF"), n + "HF Freq", freqRange (1500.0f, 16000.0f), 8000.0f, hzText);
-        b.boolean (cid (c, "hfBell"), n + "HF Bell", false);
-        b.flt (cid (c, "hmG"), n + "HMF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
-        b.flt (cid (c, "hmF"), n + "HMF Freq", freqRange (600.0f, 7000.0f), 2500.0f, hzText);
-        b.flt (cid (c, "hmQ"), n + "HMF Q", NormalisableRange<float> (0.4f, 3.0f, 0.0f, 0.6f), 1.0f);
-        b.flt (cid (c, "lmG"), n + "LMF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
-        b.flt (cid (c, "lmF"), n + "LMF Freq", freqRange (200.0f, 2500.0f), 600.0f, hzText);
-        b.flt (cid (c, "lmQ"), n + "LMF Q", NormalisableRange<float> (0.4f, 3.0f, 0.0f, 0.6f), 1.0f);
-        b.flt (cid (c, "lfG"), n + "LF Gain", { -15.0f, 15.0f }, 0.0f, dbText);
-        b.flt (cid (c, "lfF"), n + "LF Freq", freqRange (30.0f, 450.0f), 100.0f, hzText);
-        b.boolean (cid (c, "lfBell"), n + "LF Bell", false);
+        addProcessingParams (b, c, n);
 
         b.boolean (cid (c, "insPre"), n + "Inserts Before Processing", false);
 
@@ -176,6 +181,18 @@ AudioProcessorValueTreeState::ParameterLayout createLayout (bool standalone)
     b.flt ("bcMix", "Bus Comp Mix", { 0.0f, 1.0f }, 1.0f,
            [] (float v, int) { return String (roundToInt (v * 100)) + "%"; });
     b.flt ("master", "Master Fader", fader, 0.0f, faderText);
+    return layout;
+}
+AudioProcessorValueTreeState::ParameterLayout createStripLayout()
+{
+    AudioProcessorValueTreeState::ParameterLayout layout;
+    Builder b { layout };
+    addProcessingParams (b, 0, {});
+    NormalisableRange<float> fader (kFaderMinDb, 12.0f);
+    fader.setSkewForCentre (-12.0f);
+    b.flt (cid (0, "pan"), "Pan", { -1.0f, 1.0f }, 0.0f, panText);
+    b.flt (cid (0, "fader"), "Fader", fader, 0.0f, faderText);
+    b.boolean (cid (0, "mute"), "Mute", false);
     return layout;
 }
 } // namespace fh

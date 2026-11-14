@@ -1,7 +1,8 @@
 # Faderhouse
 
 A 16-channel console in the style of a classic British large-format desk, as a
-VST3 plugin (AU on macOS) and a Standalone app. In the Standalone app each
+VST3 plugin (AU on macOS) and a Standalone app, plus **Faderhouse Strip**, one
+channel of the desk as an insert plugin for a single DAW track. In the Standalone app each
 channel can take an audio-interface input or host its own VST3 instrument
 played from your MIDI keyboard, and every channel, FX return and the mix bus
 can host VST3 effects. Built with JUCE 8 and CMake.
@@ -27,9 +28,23 @@ can host VST3 effects. Built with JUCE 8 and CMake.
 - **5 themes**: Studio Grey, Black Session, Cream Classic, Midnight, Daylight.
   Window sizes 60 to 115% plus free resize.
 
+- **Plugin delay compensation**: hosted plugins that add latency are lined
+  up automatically. Every channel is delayed to match the slowest channel,
+  the dry mix waits for the slowest FX return, and the total (shown as PDC in
+  the master section) is reported to the DAW so the desk stays in time with
+  the rest of the session.
+
 Right-click a send knob for pre/post fader. Double-click any control to reset
 it, double-click a scribble strip to rename the channel. Everything, including
 hosted plugins and their settings, is saved with the session.
+
+## Faderhouse Strip
+
+The same input stage, filters, compressor, gate and four-band EQ as a desk
+channel, plus pan, output fader and in/out meters, as a VST3 (and AU) insert.
+Mono or stereo tracks; adds no latency. Uses the same 5 themes.
+
+![Faderhouse Strip](docs/screenshots/strip_StudioGrey.png)
 
 ## Standalone vs plugin
 
@@ -37,6 +52,7 @@ hosted plugins and their settings, is saved with the session.
 |---|---|---|
 | Channel inputs | Up to 16 audio-interface inputs (Options > Audio/MIDI settings) | Main stereo input, plus 7 optional stereo inputs the DAW can feed (sidechain-style buses "In 3/4" ... "In 15/16") |
 | Instruments | Any VST3 instrument per channel, played from MIDI input | Works too (MIDI from the track) |
+| Hosts it was written for | Runs on its own | Any VST3 host, including the Max Sample desktop companion |
 | Default routing | Channel *n* = interface input *n* | Channel 1 = main input, channels 2 to 8 = the extra inputs |
 
 The Standalone app starts with its audio input muted to avoid feedback; click
@@ -51,7 +67,8 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 Outputs: `build/Faderhouse_artefacts/Release/` (`VST3/Faderhouse.vst3`,
-`Standalone/`, `AU/` on macOS). `-DJUCE_DIR=/path/to/JUCE` uses a local JUCE.
+`Standalone/`, `AU/` on macOS) and `build/FaderhouseStrip_artefacts/Release/`
+(`VST3/Faderhouse Strip.vst3`, `AU/` on macOS). `-DJUCE_DIR=/path/to/JUCE` uses a local JUCE.
 `-DFH_BUILD_TOOLS=OFF` skips the tests and tools.
 
 macOS builds target 10.15+ as a universal binary (Intel and Apple Silicon),
@@ -64,9 +81,10 @@ libfontconfig1-dev libgl1-mesa-dev`.
 
 - `EngineTests`: runs the console like a DAW would and checks gain staging,
   pan laws, mute/solo, filters, EQ, compressor, gate, sends, bus compressor,
-  state save/restore, and hosting with two tiny test plugins built alongside
-  (`TestHalfGain.vst3` effect, `TestSineSynth.vst3` instrument).
-- `Snapshots <dir>`: renders a PNG of the console in every theme
+  state save/restore, hosting, latency compensation and the Strip plugin,
+  using three tiny test plugins built alongside (`TestHalfGain.vst3`,
+  `TestDelay.vst3` with 480 samples of latency, `TestSineSynth.vst3`).
+- `Snapshots <dir>`: renders PNGs of the console in every theme and of the Strip
   (`xvfb-run` on a headless Linux box).
 
 ## Layout
@@ -77,6 +95,8 @@ Source/engine/Params.*        all parameter IDs and ranges
 Source/engine/ChannelStrip.*  input stage, filters, dynamics, EQ
 Source/engine/BusCompressor.* mix bus compressor
 Source/engine/Biquad.h        filters and the EQ design shared with the UI curve
+Source/engine/DelayLine.h     delay used for plugin latency compensation
+Source/strip/*                Faderhouse Strip (single channel plugin)
 Source/hosting/HostedChain.*  VST3 chains (inserts or one instrument) on AudioProcessorGraph
 Source/ui/*                   look and feel, themes, strips, channel panel, master, plugin windows
 tools/                        tests, test plugins, screenshot renderer

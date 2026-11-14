@@ -60,8 +60,20 @@ set(FH_SOURCES
     Source/ui/Controls.cpp
     Source/ui/ChainUI.cpp
     Source/ui/StripView.cpp
+    Source/ui/EqCurve.cpp
+    Source/ui/ProcessingPanel.cpp
     Source/ui/FocusPanel.cpp
     Source/ui/MasterSection.cpp)
+
+# Sources of the single channel-strip plugin (it reuses the engine and UI pieces)
+set(FH_STRIP_SOURCES
+    Source/strip/StripProcessor.cpp
+    Source/strip/StripEditor.cpp
+    Source/engine/Params.cpp
+    Source/engine/ChannelStrip.cpp
+    Source/ui/Controls.cpp
+    Source/ui/EqCurve.cpp
+    Source/ui/ProcessingPanel.cpp)
 
 set(FH_DEFS
     JUCE_WEB_BROWSER=0
@@ -74,11 +86,37 @@ set(FH_DEFS
     FH_BRAND_NAME="${BRAND_NAME}"
     FH_PRODUCT_NAME="${PRODUCT_NAME}")
 
-target_sources(Faderhouse PRIVATE ${FH_SOURCES})
+target_sources(Faderhouse PRIVATE ${FH_SOURCES} Source/PluginEntry.cpp)
 target_include_directories(Faderhouse PRIVATE Source)
 target_compile_definitions(Faderhouse PUBLIC ${FH_DEFS})
 target_link_libraries(Faderhouse
     PRIVATE juce::juce_audio_utils juce::juce_audio_processors juce::juce_dsp
+    PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
+
+# Faderhouse Strip: one channel of the console as a per-track insert plugin
+set(STRIP_FORMATS VST3)
+if(APPLE)
+    list(APPEND STRIP_FORMATS AU)
+endif()
+juce_add_plugin(FaderhouseStrip
+    COMPANY_NAME "${BRAND_NAME}"
+    PLUGIN_MANUFACTURER_CODE Ybrd
+    PLUGIN_CODE Fdh2
+    PRODUCT_NAME "${PRODUCT_NAME} Strip"
+    FORMATS ${STRIP_FORMATS}
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD FALSE
+    VST3_CATEGORIES Fx EQ Dynamics
+    AU_MAIN_TYPE kAudioUnitType_Effect)
+target_sources(FaderhouseStrip PRIVATE ${FH_STRIP_SOURCES} Source/strip/StripEntry.cpp)
+target_include_directories(FaderhouseStrip PRIVATE Source)
+target_compile_definitions(FaderhouseStrip PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
+    FH_BRAND_NAME="${BRAND_NAME}" FH_PRODUCT_NAME="${PRODUCT_NAME}")
+target_link_libraries(FaderhouseStrip
+    PRIVATE juce::juce_audio_utils juce::juce_audio_processors
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
 # Tests and developer tools
@@ -100,18 +138,26 @@ if(FH_BUILD_TOOLS)
     target_compile_definitions(TestSineSynth PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
     target_link_libraries(TestSineSynth PRIVATE juce::juce_audio_utils PUBLIC juce::juce_recommended_config_flags)
 
+    juce_add_plugin(TestDelay
+        COMPANY_NAME "${BRAND_NAME}" PLUGIN_MANUFACTURER_CODE Ybrd PLUGIN_CODE Tdl1
+        PRODUCT_NAME "TestDelay" FORMATS VST3 IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE)
+    target_sources(TestDelay PRIVATE tools/TestDelay.cpp)
+    target_compile_definitions(TestDelay PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_link_libraries(TestDelay PRIVATE juce::juce_audio_utils PUBLIC juce::juce_recommended_config_flags)
+
     foreach(tool EngineTests Snapshots)
         juce_add_console_app(${tool} PRODUCT_NAME "${tool}")
-        target_sources(${tool} PRIVATE tools/${tool}.cpp ${FH_SOURCES})
+        target_sources(${tool} PRIVATE tools/${tool}.cpp ${FH_SOURCES} Source/strip/StripProcessor.cpp Source/strip/StripEditor.cpp)
         target_include_directories(${tool} PRIVATE Source)
         target_compile_definitions(${tool} PRIVATE ${FH_DEFS} JUCE_MODAL_LOOPS_PERMITTED=1
             JucePlugin_Name="${PRODUCT_NAME}")
         target_link_libraries(${tool} PRIVATE juce::juce_audio_utils juce::juce_audio_processors juce::juce_dsp
             PUBLIC juce::juce_recommended_config_flags)
     endforeach()
-    add_dependencies(EngineTests TestHalfGain_VST3 TestSineSynth_VST3)
+    add_dependencies(EngineTests TestHalfGain_VST3 TestSineSynth_VST3 TestDelay_VST3)
 
     add_test(NAME EngineTests COMMAND EngineTests
         $<TARGET_FILE_DIR:TestHalfGain>/VST3/TestHalfGain.vst3
-        $<TARGET_FILE_DIR:TestSineSynth>/VST3/TestSineSynth.vst3)
+        $<TARGET_FILE_DIR:TestSineSynth>/VST3/TestSineSynth.vst3
+        $<TARGET_FILE_DIR:TestDelay>/VST3/TestDelay.vst3)
 endif()

@@ -35,6 +35,10 @@ public:
     void release();
     void process (juce::AudioBuffer<float>&, juce::MidiBuffer&);
     bool isActive() const noexcept { return activeCount.load (std::memory_order_acquire) > 0; }
+    // Latency the chain adds when it runs (0 when nothing is active). Audio thread safe.
+    int getActiveLatency() const noexcept { return isActive() ? latency.load (std::memory_order_relaxed) : 0; }
+    // Re-read the graph's latency (plugins can change theirs at any time). Message thread.
+    void refreshLatency();
 
     bool addPlugin (const juce::PluginDescription&, juce::String& error);
     void removePlugin (int index);
@@ -46,7 +50,6 @@ public:
     int size() const noexcept { return (int) slots.size(); }
     bool isFull() const noexcept { return size() >= (kind == Kind::Instrument ? 1 : kMaxInserts); }
     juce::AudioPluginInstance* getPlugin (int index) const;
-    int getLatencySamples() const { return graph.getLatencySamples(); }
     Kind getKind() const noexcept { return kind; }
     const juce::String& getName() const noexcept { return name; }
     juce::String describe() const; // "Reverb, EQ" or "" when empty
@@ -61,7 +64,7 @@ private:
     juce::AudioProcessorGraph::Node::Ptr inputNode, outputNode, midiNode;
     std::vector<juce::AudioProcessorGraph::Node::Ptr> slots;
     std::vector<juce::PluginDescription> descs; // as loaded (instances can report a different file)
-    std::atomic<int> activeCount { 0 };
+    std::atomic<int> activeCount { 0 }, latency { 0 };
     const Kind kind;
     const juce::String name;
     double currentRate = 48000.0;

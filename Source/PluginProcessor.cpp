@@ -182,6 +182,10 @@ void FaderhouseProcessor::prepareToPlay (double sampleRate, int blockSize)
     mixBuf.setSize (2, blockSize);
     for (auto& b : auxBuf) b.setSize (2, blockSize);
     chMidi.ensureSize (2048);
+    const int maxDelay = jmax (65536, (int) sampleRate);
+    for (auto& d : chDelay) d.prepare (maxDelay, blockSize);
+    for (auto& d : auxDelay) d.prepare (maxDelay, blockSize);
+    dryDelay.prepare (maxDelay, blockSize);
 
     for (auto& c : channels)
     {
@@ -226,6 +230,9 @@ void FaderhouseProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& 
     mixBuf.clear (0, n);
     for (auto& b : auxBuf) b.clear (0, n);
 
+    const auto lat = computeLatencies();
+    pdcSamples.store (lat.total(), std::memory_order_relaxed);
+
     bool anySolo = false;
     for (auto& c : channels) anySolo |= c.solo->load() > 0.5f;
 
@@ -236,8 +243,9 @@ void FaderhouseProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& 
         else          chBuf.clear (dest, 0, n);
     };
 
-    for (auto& c : channels)
+    for (int ci = 0; ci < kNumChannels; ++ci)
     {
+        auto& c = channels[(size_t) ci];
         const int src = (int) c.src->load();
         float gl = 0, gr = 0, f = 0, m = 0;
         const bool live = src != kSourceOff && ! (src == kSourceInstrument && ! c.instrument->isActive());
@@ -275,6 +283,7 @@ void FaderhouseProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& 
             if (insPre && c.inserts->isActive()) { chMidi.clear(); c.inserts->process (chBuf, chMidi); }
             c.strip.processMain (chBuf, n);
             if (! insPre && c.inserts->isActive()) { chMidi.clear(); c.inserts->process (chBuf, chMidi); }
+            chDelay[(size_t) ci].process (chBuf, n, lat.channelMax - lat.channel[(size_t) ci]);
 
             const bool muted = c.mute->load() > 0.5f || (anySolo && c.solo->load() < 0.5f);
             m = muted ? 0.0f : 1.0f;
@@ -308,12 +317,16 @@ void FaderhouseProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& 
         }
     }
 
+    // The dry mix waits for the slowest FX return.
+    dryDelay.process (mixBuf, n, lat.auxMax);
+
     // FX returns (solo-safe)
     for (int a = 0; a < kNumAux; ++a)
     {
         auto& x = aux[(size_t) a];
         auto& b = auxBuf[(size_t) a];
         if (x.chain->isActive()) { chMidi.clear(); x.chain->process (b, chMidi); }
+        auxDelay[(size_t) a].process (b, n, lat.auxMax - lat.aux[(size_t) a]);
         float gl, gr;
         panGains (x.pan->load(), true, gl, gr);
         const float g = x.mute->load() > 0.5f ? 0.0f : faderGain (x.level->load());
@@ -423,6 +436,28 @@ void FaderhouseProcessor::setStateInformation (const void* data, int size)
     }
 }
 
+FaderhouseProcessor::Latencies FaderhouseProcessor::computeLatencies() const noexcept
+{
+    Latencies l;
+    for (int c = 0; c < kNumChannels; ++c)
+    {
+        auto& ch = channels[(size_t) c];
+        const int src = (int) ch.src->load();
+        if (src == kSourceOff) continue;
+        int v = ch.inserts->getActiveLatency();
+        if (src == kSourceInstrument) v += ch.instrument->getActiveLatency();
+        l.channel[(size_t) c] = v;
+        l.channelMax = jmax (l.channelMax, v);
+    }
+    for (int a = 0; a < kNumAux; ++a)
+    {
+        l.aux[(size_t) a] = aux[(size_t) a].chain->getActiveLatency();
+        l.auxMax = jmax (l.auxMax, l.aux[(size_t) a]);
+    }
+    l.master = masterInserts->getActiveLatency();
+    return l;
+}
+
 void FaderhouseProcessor::timerCallback()
 {
     std::unique_ptr<XmlElement> h;
@@ -432,8 +467,13 @@ void FaderhouseProcessor::timerCallback()
     }
     if (h != nullptr)
         applyHostingState (*h);
+
+    // Plugins can change their latency at any time: re-read and report it.
+    for (auto* c : allChains()) c->refreshLatency();
+    const int total = computeLatencies().total();
+    if (total != getLatencySamples())
+        setLatencySamples (total);
 }
 
 AudioProcessorEditor* FaderhouseProcessor::createEditor() { return new FaderhouseEditor (*this); }
 
-AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new FaderhouseProcessor(); }

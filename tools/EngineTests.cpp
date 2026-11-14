@@ -2,6 +2,7 @@
 // Runs the processor the way a DAW would (plugin layout: stereo main input)
 // and checks routing, gain staging, EQ, dynamics, sends and plugin hosting.
 #include "PluginProcessor.h"
+#include "strip/StripProcessor.h"
 
 using namespace juce;
 using namespace fh;
@@ -53,6 +54,43 @@ struct Rig
         return { pl, pr };
     }
     int64 pos = 0;
+
+    // Feed a unit impulse; return where the output's biggest sample lands and its value.
+    // Two silent blocks first, so gain ramps have settled; positions are relative to the impulse.
+    std::pair<int, float> impulse (int blocks = 14)
+    {
+        AudioBuffer<float> b (2, kBs);
+        int at = -1; float best = 0;
+        for (int k = 0; k < blocks; ++k)
+        {
+            b.clear();
+            if (k == 2) { b.setSample (0, 0, 1.0f); b.setSample (1, 0, 1.0f); }
+            MidiBuffer m;
+            p.processBlock (b, m);
+            for (int i = 0; i < kBs; ++i)
+                if (std::abs (b.getSample (0, i)) > best) { best = std::abs (b.getSample (0, i)); at = (k - 2) * kBs + i; }
+        }
+        return { at, best };
+    }
+    // Sum of |output| after the main peak, outside +-2 samples: should be ~0 when aligned.
+    float leakage (int blocks = 14)
+    {
+        AudioBuffer<float> b (2, kBs);
+        std::vector<float> out;
+        for (int k = 0; k < blocks; ++k)
+        {
+            b.clear();
+            if (k == 2) { b.setSample (0, 0, 1.0f); b.setSample (1, 0, 1.0f); }
+            MidiBuffer m;
+            p.processBlock (b, m);
+            if (k >= 2) for (int i = 0; i < kBs; ++i) out.push_back (b.getSample (0, i));
+        }
+        int at = 0;
+        for (int i = 0; i < (int) out.size(); ++i) if (std::abs (out[(size_t) i]) > std::abs (out[(size_t) at])) at = i;
+        float sum = 0;
+        for (int i = 0; i < (int) out.size(); ++i) if (std::abs (i - at) > 2) sum += std::abs (out[(size_t) i]);
+        return sum;
+    }
 };
 
 static String db (float g) { return String (Decibels::gainToDecibels (g), 2) + " dB"; }
@@ -270,6 +308,88 @@ int main (int argc, char* argv[])
         }
     }
     else std::cout << "Instrument hosting: skipped (no TestSineSynth.vst3 given)\n";
+
+    // Latency compensation
+    const File delayPlug (argc > 3 ? argv[3] : "");
+    if (delayPlug.exists())
+    {
+        std::cout << "Latency compensation (" << delayPlug.getFileName() << ")\n";
+        auto d = [&]
+        {
+            Rig tmp;
+            return describe (tmp.p, delayPlug);
+        }();
+        check (d != nullptr, "VST3 test delay found");
+        if (d)
+        {
+            String err;
+            {
+                Rig r;
+                r.set (cid (1, "src"), (float) kSourceStereoFirst); // channel 2 on the same input, no plugins
+                check (r.p.channels[0].inserts->addPlugin (*d, err), "delay plugin loads on channel 1", err);
+                const auto [at, v] = r.impulse();
+                check (r.p.pdcSamples.load() == 480, "reports 480 samples of compensation", String (r.p.pdcSamples.load()));
+                check (at == 480 && std::abs (v - 2.0f) < 0.01f, "channel 2 is delayed to line up with channel 1 (one impulse, +6 dB)",
+                       "peak " + String (v, 3) + " at " + String (at));
+                check (r.leakage() < 1.0e-4f, "no early copy of the impulse leaks through");
+                r.p.channels[0].inserts->setBypassed (0, true);
+                const auto [at2, v2] = r.impulse();
+                check (at2 == 0 && std::abs (v2 - 2.0f) < 0.01f && r.p.pdcSamples.load() == 0,
+                       "bypassing the plugin removes the compensation", "peak " + String (v2, 3) + " at " + String (at2));
+            }
+            {
+                Rig r;
+                r.set (cid (0, "s1"), 0.0f);   // channel 1 sends to FX A, whose return has the delay
+                check (r.p.aux[0].chain->addPlugin (*d, err), "delay plugin loads on FX return A", err);
+                const auto [at, v] = r.impulse();
+                check (at == 480 && std::abs (v - 2.0f) < 0.01f, "dry mix waits for the delayed FX return",
+                       "peak " + String (v, 3) + " at " + String (at));
+                check (r.leakage() < 1.0e-4f, "dry and return arrive together");
+            }
+            {
+                Rig r;
+                check (r.p.masterInserts->addPlugin (*d, err) && r.p.channels[0].inserts->addPlugin (*d, err), "delay on channel 1 and master");
+                r.impulse();
+                check (r.p.pdcSamples.load() == 960, "channel + master latencies add up", String (r.p.pdcSamples.load()));
+            }
+        }
+    }
+    else std::cout << "Latency compensation: skipped (no TestDelay.vst3 given)\n";
+
+    std::cout << "Faderhouse Strip\n";
+    {
+        FaderhouseStripProcessor sp;
+        sp.setPlayConfigDetails (2, 2, kSr, kBs);
+        sp.prepareToPlay (kSr, kBs);
+        auto setS = [&] (const char* id, float v) { auto* q = sp.apvts.getParameter (cid (0, id)); q->setValueNotifyingHost (q->convertTo0to1 (v)); };
+        auto runS = [&] (float freq, float amp)
+        {
+            AudioBuffer<float> b (2, kBs); float pk = 0;
+            for (int k = 0; k < 100; ++k)
+            {
+                for (int i = 0; i < kBs; ++i)
+                {
+                    const float v = amp * (float) std::sin (MathConstants<double>::twoPi * freq * (double) (k * kBs + i) / kSr);
+                    b.setSample (0, i, v); b.setSample (1, i, v);
+                }
+                MidiBuffer m; sp.processBlock (b, m);
+                if (k > 80) pk = jmax (pk, b.getMagnitude (0, 0, kBs));
+            }
+            return pk;
+        };
+        check (near (runS (1000, 0.5f), 0.5f), "strip is unity by default");
+        setS ("hmG", 12.0f); setS ("hmF", 1000.0f);
+        check (near (runS (1000, 0.1f), 0.1f * Decibels::decibelsToGain (12.0f), 0.5f), "strip EQ +12 dB at 1 kHz");
+        setS ("hmG", 0.0f); setS ("fader", -6.0f);
+        check (near (runS (1000, 0.5f), 0.25f), "strip fader -6 dB");
+        setS ("fader", 0.0f); setS ("mute", 1.0f);
+        check (runS (1000, 0.5f) < 1.0e-4f, "strip mute");
+        setS ("mute", 0.0f);
+        MemoryBlock st; setS ("lfG", -4.0f); sp.getStateInformation (st);
+        FaderhouseStripProcessor sp2; sp2.setStateInformation (st.getData(), (int) st.getSize());
+        check (std::abs (sp2.apvts.getRawParameterValue (cid (0, "lfG"))->load() + 4.0f) < 0.01f, "strip state round-trips");
+        check (sp.getLatencySamples() == 0, "strip adds no latency");
+    }
 
     std::cout << "\n" << passes << " passed, " << failures << " failed\n";
     return failures == 0 ? 0 : 1;

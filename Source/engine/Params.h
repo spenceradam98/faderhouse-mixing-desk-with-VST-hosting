@@ -29,4 +29,6 @@ float busAttackMs (int index);
 float busReleaseSec (int index); // < 0 means Auto
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout (bool standalone);
+// The single channel-strip plugin: the processing parameters of channel 1 plus pan, fader, mute.
+juce::AudioProcessorValueTreeState::ParameterLayout createStripLayout();
 } // namespace fh
