@@ -10,7 +10,7 @@ endif()
 # Windows: static C++ runtime, so no Visual C++ Redistributable is needed.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(FADERHOUSE VERSION 0.1.0 LANGUAGES C CXX)
+project(FADERHOUSE VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

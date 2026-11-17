@@ -58,6 +58,21 @@ Mono or stereo tracks; adds no latency. Uses the same 5 themes.
 The Standalone app starts with its audio input muted to avoid feedback; click
 the banner (or Options) to unmute.
 
+## Installers (Mac and Windows)
+
+Every push to GitHub builds both installers in GitHub Actions
+(`.github/workflows/build.yml`), after the engine tests pass on Linux.
+Download them from the run's **Artifacts**, or push a tag like `v0.2.0` to
+publish them on a Release page.
+
+| File | Who it's for | What it installs |
+|---|---|---|
+| `Faderhouse-<ver>-mac.dmg` | macOS 10.15+ (incl. Big Sur on Intel), Intel and Apple Silicon | `.pkg`: Faderhouse VST3, AU, Standalone app; Faderhouse Strip VST3 + AU |
+| `Faderhouse-<ver>-windows-setup.exe` | Windows 10/11, 64-bit | Both VST3s into `C:\Program Files\Common Files\VST3`, optional Standalone app |
+
+The builds aren't code-signed yet: on Mac right-click the .pkg and choose
+**Open**; on Windows click **More info > Run anyway**.
+
 ## Build
 
 ```sh

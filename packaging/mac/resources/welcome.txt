@@ -1,0 +1,9 @@
+This installs Faderhouse, a 16-channel mixing console:
+
+  - Faderhouse VST3        -> /Library/Audio/Plug-Ins/VST3
+  - Faderhouse Audio Unit  -> /Library/Audio/Plug-Ins/Components
+  - Faderhouse app         -> /Applications (hosts VST3 instruments and effects)
+  - Faderhouse Strip       -> one channel as a per-track insert (VST3 + AU)
+
+After installing, restart your DAW (or rescan plugins) and look for
+"Faderhouse" under the effects from YourBrand.
